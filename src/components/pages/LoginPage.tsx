@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, Mail, Lock, Eye, EyeOff, User, GraduationCap, Check, ArrowLeft, AlertCircle } from 'lucide-react';
-import { signInWithEmail, signUpWithEmail, resetPasswordForEmail, isSupabaseConfigured } from '../../services/supabase';
+import { signInWithEmail, signUpWithEmail, resetPasswordForEmail, isSupabaseConfigured } from '../../services/supabase/supabaseClient';
 
 interface LoginPageProps {
   onLogin: () => void;

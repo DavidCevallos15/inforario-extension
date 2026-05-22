@@ -1,4 +1,4 @@
-import { ClassSession } from "../types";
+import { ClassSession } from "../../../types";
 
 // ------------------------------------------------------------------
 // INTERFACES
@@ -131,24 +131,6 @@ function normalizeAcademicPeriod(raw: string): string {
 // PDF PARSING PRINCIPAL — Diseñado para SGA UTM
 // ------------------------------------------------------------------
 
-/**
- * El formato SGA UTM organiza los datos en columnas con posiciones X específicas:
- * 
- * x ~35:   ASIGNATURA (nombre de la materia)
- * x ~193:  NIVEL
- * x ~220:  PARALELO
- * x ~253:  CRÉDITOS
- * x ~273:  DOCENTE
- * x ~423:  DEPARTAMENTO DOCENTE
- * x ~505+: HORARIO Y AMBIENTE
- * 
- * Cada materia tiene un bloque vertical con:
- * - Líneas de horario: "- DIA (HH:MM:SS-HH:MM:SS)"
- * - Líneas de lugar: "- LUGAR: ..."
- * - Líneas de aula: "- COD. AMB.: X-XX-X-XX-X; TIPO: ...; PISO: X;"
- * - O "- MATERIA VIRTUAL" para materias sin aula física
- */
-
 async function parsePDF(base64Data: string): Promise<ParseResult> {
   const pdfjsLib = await import('pdfjs-dist');
   
@@ -194,20 +176,14 @@ async function parsePDF(base64Data: string): Promise<ParseResult> {
     throw new Error('No se pudo extraer texto del PDF. El archivo puede estar corrupto o ser un escaneo.');
   }
   
-  // ----------------------------------------------------------------
   // 1. EXTRAER METADATOS DEL ENCABEZADO
-  // ----------------------------------------------------------------
   const metadata = extractMetadata(allItems);
   
-  // ----------------------------------------------------------------
   // 2. EXTRAER BLOQUES DE MATERIAS
-  // ----------------------------------------------------------------
   const facultyName = metadata.faculty || 'Sin asignar';
   let sessions = extractSubjectBlocks(allItems, facultyName);
   
-  // ----------------------------------------------------------------
-  // 3. RESOLVER CONFLICTOS U OVERLAPS
-  // ----------------------------------------------------------------
+  // 3. RESOLVER CONFLICTOS U OVERLAPS (No destructivo)
   sessions = resolveConflicts(sessions);
   
   return {
@@ -233,7 +209,7 @@ interface Metadata {
 function extractMetadata(items: TextItem[]): Metadata {
   const result: Metadata = {};
   
-  // Header items are in the top portion (y < 200)
+  // Header items are in the top portion (y < 210)
   const headerItems = items.filter(i => i.y < 210);
   
   // Build a map of key-value pairs from header
@@ -242,7 +218,6 @@ function extractMetadata(items: TextItem[]): Metadata {
     const text = item.text.toUpperCase();
     
     if (text.includes('PERIODO:') || text === 'PERIODO:') {
-      // The value is the next item at roughly the same Y
       const value = findValueAfterLabel(headerItems, idx);
       if (value) result.academicPeriod = normalizeAcademicPeriod(value);
     }
@@ -273,8 +248,6 @@ function extractMetadata(items: TextItem[]): Metadata {
 
 function findValueAfterLabel(items: TextItem[], labelIdx: number): string | null {
   const label = items[labelIdx];
-  
-  // Look for the next item that is on the same Y row but further to the right
   for (let i = labelIdx + 1; i < items.length; i++) {
     const candidate = items[i];
     if (Math.abs(candidate.y - label.y) <= 5 && candidate.x > label.x) {
@@ -291,12 +264,12 @@ function extractSubjectBlocks(items: TextItem[], faculty: string): ClassSession[
   const sessions: ClassSession[] = [];
   const subjectColors = new Map<string, string>();
   
-  // Column boundaries (based on UTM SGA PDF layout analysis)
+  // Column boundaries
   const COL = {
-    SUBJECT_MAX_X: 170,    // Subject name occupies x < 170
-    DOCENTE_MIN_X: 260,    // DOCENTE column starts
-    DOCENTE_MAX_X: 415,    // DOCENTE column ends
-    HORARIO_MIN_X: 495,    // HORARIO Y AMBIENTE column starts
+    SUBJECT_MAX_X: 170,
+    DOCENTE_MIN_X: 260,
+    DOCENTE_MAX_X: 415,
+    HORARIO_MIN_X: 495,
   };
   
   // Find all "ASIGNATURA" headers (one per page) to determine data start Y
@@ -311,24 +284,19 @@ function extractSubjectBlocks(items: TextItem[], faculty: string): ClassSession[
   
   const contentItems = items.filter(i => {
     if (i.y < dataStartY) return false;
-    // Filter out exact header column labels (they repeat on page 2)
     if (headerTexts.includes(i.text)) return false;
-    // Filter out footer/legend text
     if (footerTexts.some(ft => i.text.includes(ft))) return false;
     if (i.text.startsWith('NOTA:')) return false;
     return true;
   });
   
-  // First pass: identify all subject start positions
-  // Subject names are in x < SUBJECT_MAX_X
+  // Identify all subject start positions
   const subjectStarts: { y: number; text: string }[] = [];
   
   for (const item of contentItems) {
     if (item.x < COL.SUBJECT_MAX_X) {
-      // Skip very short texts (probably noise)
       if (item.text.length < 3) continue;
       
-      // Check if this Y is near an existing subject start (multi-line names)
       const existing = subjectStarts.find(s => Math.abs(s.y - item.y) < 15);
       if (!existing) {
         subjectStarts.push({ y: item.y, text: item.text });
@@ -341,62 +309,54 @@ function extractSubjectBlocks(items: TextItem[], faculty: string): ClassSession[
   
   if (subjectStarts.length === 0) return sessions;
   
-  // Calculate block boundaries using MIDPOINTS between consecutive subjects
-  // This ensures we capture horario items that appear ABOVE the subject name row
-  // (the UTM PDF often places the first "- DIA (...)" line above the subject name in Y)
+  // Calculate block boundaries
   for (let sIdx = 0; sIdx < subjectStarts.length; sIdx++) {
-    // Block start: midpoint between previous subject and this one
-    // For the first subject, use dataStartY
     const yStart = sIdx === 0 
       ? dataStartY 
       : Math.round((subjectStarts[sIdx - 1].y + subjectStarts[sIdx].y) / 2);
     
-    // Block end: midpoint between this subject and the next one
-    // For the last subject, use a large value
     const yEnd = sIdx < subjectStarts.length - 1 
       ? Math.round((subjectStarts[sIdx].y + subjectStarts[sIdx + 1].y) / 2)
       : 9999;
     
     const blockItems = contentItems.filter(i => i.y >= yStart && i.y < yEnd);
     
-    // Extract subject name (all text items with x < SUBJECT_MAX_X)
+    // Extract subject name
     const subjectParts = blockItems
       .filter(i => i.x < COL.SUBJECT_MAX_X)
       .sort((a, b) => a.y - b.y)
       .map(i => i.text);
     
-    // Extract docente name (all text items in docente column)
+    // Extract docente name
     const docenteParts = blockItems
       .filter(i => i.x >= COL.DOCENTE_MIN_X && i.x < COL.DOCENTE_MAX_X)
       .sort((a, b) => a.y - b.y)
       .map(i => i.text);
     
-    // Extract horario items (everything in the schedule column)
+    // Extract horario items
     const horarioItems = blockItems
       .filter(i => i.x >= COL.HORARIO_MIN_X)
       .sort((a, b) => a.y - b.y);
     
-    // Build the subject name (join multi-line names, remove trailing "(A19)" etc.)
+    // Clean malla code like (A19), (A20), (ITINERARIO I) completely
     let subjectName = subjectParts.join(' ')
-      .replace(/\s*\([A-Z0-9]+\)\s*/g, '') // Remove malla code like (A19) or (ITINERARIO) completely. User requested clean name
+      .replace(/\s*\([A-Z0-9\s-]+\)\s*/gi, '')
       .replace(/^(TECNOLOG[IÍ]AS DE LA\s*)+/i, '')
       .replace(/\s+/g, ' ')
       .trim();
     
     if (!subjectName || subjectName.length < 3) continue;
     
-    // Build docente name
     const docenteName = normalizeTeacherName(docenteParts.join(' '));
     
-    // Parse schedule entries from horario items
+    // Parse schedule entries
     const scheduleEntries = parseHorarioEntries(horarioItems);
-
     const horarioText = horarioItems.map((i) => i.text).join(' ');
     const isVirtualOnly = scheduleEntries.length === 0 && /MATERIA\s+VIRTUAL/i.test(horarioText);
-
+    
     const subjectKey = subjectName.toUpperCase();
     const subjectColor = getSubjectColor(subjectKey, subjectColors);
-
+    
     if (isVirtualOnly) {
       sessions.push({
         id: crypto.randomUUID(),
@@ -415,10 +375,8 @@ function extractSubjectBlocks(items: TextItem[], faculty: string): ClassSession[
       continue;
     }
     
-    // Skip virtual-only subjects (no physical schedule)
     if (scheduleEntries.length === 0) continue;
     
-    // Create a session for each schedule entry
     for (const entry of scheduleEntries) {
       sessions.push({
         id: crypto.randomUUID(),
@@ -440,8 +398,6 @@ function extractSubjectBlocks(items: TextItem[], faculty: string): ClassSession[
   return sessions;
 }
 
-
-
 // ------------------------------------------------------------------
 // PARSE HORARIO ENTRIES
 // ------------------------------------------------------------------
@@ -455,21 +411,14 @@ interface ScheduleEntry {
 
 function parseHorarioEntries(items: TextItem[]): ScheduleEntry[] {
   const entries: ScheduleEntry[] = [];
-  
-  // Join all horario text for processing
   const allText = items.map(i => i.text).join('\n');
   
-  // Check if it's a virtual subject
   if (/MATERIA\s+VIRTUAL/i.test(allText)) {
-    // If ALL entries are virtual, skip entirely
-    // But if some are virtual and some have schedule, only process the scheduled ones
     if (!/\b(LUNES|MARTES|MI[EÉ]RCOLES|JUEVES|VIERNES)\b/i.test(allText)) {
-      return []; // Purely virtual
+      return [];
     }
   }
   
-  // Parse day + time entries
-  // Format: "- DIA (HH:MM:SS-HH:MM:SS)"
   const dayTimeRegex = /-\s*(LUNES|MARTES|MI[EÉ]RCOLES|JUEVES|VIERNES)\s*\((\d{1,2}):(\d{2}):\d{2}-(\d{1,2}):(\d{2}):\d{2}\)/gi;
   
   let match;
@@ -488,22 +437,18 @@ function parseHorarioEntries(items: TextItem[]): ScheduleEntry[] {
     });
   }
   
-  // For each day-time entry, find its associated location
   for (let i = 0; i < rawEntries.length; i++) {
     const entry = rawEntries[i];
     
-    // Get the text between this entry and the next one
     const startIdx = entry.matchIndex;
     const endIdx = i < rawEntries.length - 1 ? rawEntries[i + 1].matchIndex : allText.length;
     const block = allText.substring(startIdx, endIdx);
     
     let location = 'Sin asignar';
-
     if (/MATERIA\s+VIRTUAL/i.test(block)) {
       location = 'Materia Virtual';
     }
-
-    // Extract COD. AMB.
+    
     const codAmbMatch = block.match(/COD\.\s*AMB\.?:?\s*(\S+)/i);
     const tipoMatch = block.match(/TIPO:\s*([^;]+)/i);
     const lugarMatch = block.match(/LUGAR:\s*(.+?)(?:\s*\(|$|\n)/m);
@@ -516,12 +461,11 @@ function parseHorarioEntries(items: TextItem[]): ScheduleEntry[] {
          location = normLoc;
       }
     } else if (lugarMatch && location === 'Sin asignar') {
-      // Fallback para cuando no hay COD. AMB. pero sí LUGAR
       location = lugarMatch[1].trim();
     }
     
     const dayName = entry.day.toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // Remove accents for DAY_MAP lookup
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const day = DAY_MAP[dayName] || DAY_MAP[entry.day.toLowerCase()];
     
     if (day) {
@@ -544,7 +488,6 @@ function parseHorarioEntries(items: TextItem[]): ScheduleEntry[] {
 // ------------------------------------------------------------------
 async function parseImage(base64Data: string, mimeType: string): Promise<ParseResult> {
   const Tesseract = await import('tesseract.js');
-  
   const imageDataUrl = `data:${mimeType};base64,${base64Data}`;
   
   const result = await Tesseract.recognize(imageDataUrl, 'spa', {
@@ -561,7 +504,6 @@ async function parseImage(base64Data: string, mimeType: string): Promise<ParseRe
     throw new Error('No se pudo extraer texto de la imagen. Asegúrate de que sea legible y contenga un horario válido.');
   }
   
-  // Try to parse the OCR text using the same SGA format patterns
   return parseRawText(text);
 }
 
@@ -574,15 +516,12 @@ function parseRawText(text: string): ParseResult {
   let faculty: string | undefined;
   let academicPeriod: string | undefined;
   
-  // Extract metadata
   const facultyMatch = text.match(/FACULTAD:\s*(.+)/i);
   if (facultyMatch) faculty = `FACULTAD DE ${facultyMatch[1].trim().toUpperCase()}`;
   
   const periodoMatch = text.match(/PERIODO:\s*(.+)/i);
   if (periodoMatch) academicPeriod = normalizeAcademicPeriod(periodoMatch[1].trim());
   
-  // Split text into blocks by finding subject patterns
-  // Look for lines that seem like subject names (all caps, at the start of a block)
   const lines = text.split('\n');
   
   let currentSubject = '';
@@ -591,7 +530,6 @@ function parseRawText(text: string): ParseResult {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     
-    // Try to detect day+time patterns
     const dayTimeMatch = line.match(/-\s*(LUNES|MARTES|MI[EÉ]RCOLES|JUEVES|VIERNES)\s*\((\d{1,2}):(\d{2}):\d{2}-(\d{1,2}):(\d{2}):\d{2}\)/i);
     
     if (dayTimeMatch) {
@@ -601,7 +539,6 @@ function parseRawText(text: string): ParseResult {
       
       if (day && currentSubject) {
         const subjectColor = getSubjectColor(currentSubject, subjectColors);
-        // Look ahead for location
         let location = 'Sin asignar';
         for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
           const codMatch = lines[j].match(/COD\.\s*AMB\.?:?\s*(\S+)/i);
@@ -629,11 +566,10 @@ function parseRawText(text: string): ParseResult {
       }
     }
     
-    // Detect subject/docente lines (heuristic: all caps, substantial text, not a schedule line)
     if (line.length > 10 && /^[A-ZÁÉÍÓÚÜÑ\s()]+$/.test(line) && !line.includes('LUGAR:') && !line.includes('COD.') && !line.includes('LEYENDA')) {
       if (!line.includes('LUNES') && !line.includes('MARTES') && !line.includes('JUEVES') && !line.includes('VIERNES')) {
         currentSubject = line
-          .replace(/\s*\([A-Z0-9]+\)\s*/g, '')
+          .replace(/\s*\([A-Z0-9\s-]+\)\s*/gi, '')
           .replace(/^(TECNOLOG[IÍ]AS DE LA\s*)+/i, '')
           .trim();
       }
@@ -644,28 +580,27 @@ function parseRawText(text: string): ParseResult {
 }
 
 // ------------------------------------------------------------------
-// RESOLUCIÓN DE CONFLICTOS DE HORARIO
+// RESOLUCIÓN DE CONFLICTOS DE HORARIO (No destructivo)
 // ------------------------------------------------------------------
-function resolveConflicts(sessions: ClassSession[]): ClassSession[] {
+export function resolveConflicts(sessions: ClassSession[]): ClassSession[] {
   if (sessions.length <= 1) return sessions;
 
   const schedulable = sessions.filter((s) => s.day && s.startTime && s.endTime);
   const unscheduled = sessions.filter((s) => !s.day || !s.startTime || !s.endTime);
   
-  const toRemove = new Set<string>();
+  // Reset conflicts
+  for (const s of sessions) {
+    s.conflict = false;
+  }
   
   // Sort by start time so we predictably evaluate conflicts
   schedulable.sort((a, b) => {
-    if (a.day !== b.day) return a.day.localeCompare(b.day);
-    return a.startTime.localeCompare(b.startTime);
+    if (a.day !== b.day) return (a.day || '').localeCompare(b.day || '');
+    return (a.startTime || '').localeCompare(b.startTime || '');
   });
   
   for (let i = 0; i < schedulable.length; i++) {
-    if (toRemove.has(schedulable[i].id)) continue;
-    
     for (let j = i + 1; j < schedulable.length; j++) {
-      if (toRemove.has(schedulable[j].id)) continue;
-      
       const s1 = schedulable[i];
       const s2 = schedulable[j];
       
@@ -675,28 +610,27 @@ function resolveConflicts(sessions: ClassSession[]): ClassSession[] {
           return h * 60 + m;
         };
         
-        const start1 = timeToMins(s1.startTime);
-        const end1 = timeToMins(s1.endTime);
-        const start2 = timeToMins(s2.startTime);
-        const end2 = timeToMins(s2.endTime);
+        const start1 = timeToMins(s1.startTime || '00:00');
+        const end1 = timeToMins(s1.endTime || '00:00');
+        const start2 = timeToMins(s2.startTime || '00:00');
+        const end2 = timeToMins(s2.endTime || '00:00');
         
         // Detect overlap
         if (start1 < end2 && start2 < end1) {
-          s1.subject = `${s1.subject} "choque con la materia de ${s2.subject}"`;
-          toRemove.add(s2.id);
+          s1.conflict = true;
+          s2.conflict = true;
         }
       }
     }
   }
   
-  return [...schedulable.filter(s => !toRemove.has(s.id)), ...unscheduled];
+  return [...schedulable, ...unscheduled];
 }
 
 // ------------------------------------------------------------------
-// FUNCIÓN PRINCIPAL EXPORTADA (misma interfaz que el viejo servicio de IA)
+// FUNCIÓN PRINCIPAL EXPORTADA
 // ------------------------------------------------------------------
 export const parseScheduleFile = async (base64Data: string, mimeType: string): Promise<ParseResult> => {
-  // Remove data URL prefix
   const cleanBase64 = base64Data.replace(/^data:(.*);base64,/, "");
   
   try {

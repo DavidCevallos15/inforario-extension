@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { parseScheduleFile } from './services/scheduleParser';
+import { parseScheduleFile } from './features/uploader/utils/sguRegexParser';
 
 async function test() {
   const pdfDir = path.join(process.cwd(), 'horarios-de-prueba');

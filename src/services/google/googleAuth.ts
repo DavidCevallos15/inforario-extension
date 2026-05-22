@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { GOOGLE_CLIENT_ID } from '../constants';
-import { Schedule } from '../types';
+import { GOOGLE_CLIENT_ID } from '../../constants';
+import { Schedule, ClassSession } from '../../types';
 
 declare global {
   interface Window {
@@ -79,7 +79,18 @@ const getErrorMessage = (error: unknown): string => {
 // Helper: Calculate the first occurrence date of a day of week on or after start date
 const getFirstDateOfDay = (startDate: Date, dayName: string): Date => {
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const targetIndex = days.indexOf(dayName);
+  
+  // Map Spanish day names to English for calculations
+  const dayEnMap: Record<string, string> = {
+    'Lunes': 'Monday',
+    'Martes': 'Tuesday',
+    'Miércoles': 'Wednesday',
+    'Jueves': 'Thursday',
+    'Viernes': 'Friday',
+  };
+  
+  const mappedDay = dayEnMap[dayName] || dayName;
+  const targetIndex = days.indexOf(mappedDay);
   if (targetIndex === -1) return startDate;
 
   const resultDate = new Date(startDate);
@@ -194,7 +205,7 @@ export const useGoogleCalendar = () => {
         }
 
         const calendarTitle = `Horario UTM - ${schedule.academic_period || 'Clases'}`;
-        const calendarRes = await window.gapi.client.calendar.calendars.insert({
+        const calendarRes = await (window.gapi.client.calendar.calendars.insert as any)({
           resource: {
             summary: calendarTitle,
             description: `Horario generado por Inforario para la Facultad: ${schedule.faculty || 'General'}`,
@@ -207,7 +218,7 @@ export const useGoogleCalendar = () => {
           throw new Error('No se pudo crear el calendario en Google.');
         }
 
-        const batch = window.gapi.client.newBatch();
+        const batch = (window.gapi.client as any).newBatch();
 
         const untilDate = new Date(semesterEnd);
         untilDate.setHours(23, 59, 59);
@@ -230,6 +241,17 @@ export const useGoogleCalendar = () => {
           const endDateTime = new Date(firstDate);
           endDateTime.setHours(endH, endM, 0);
 
+          // Map Spanish days of week to RRULE English BYDAY
+          const dayRuleMap: Record<string, string> = {
+            'Lunes': 'MO',
+            'Martes': 'TU',
+            'Miércoles': 'WE',
+            'Jueves': 'TH',
+            'Viernes': 'FR',
+          };
+
+          const byDay = dayRuleMap[session.day] || 'MO';
+
           const request = window.gapi!.client.calendar.events.insert({
             calendarId,
             resource: {
@@ -244,7 +266,7 @@ export const useGoogleCalendar = () => {
                 dateTime: endDateTime.toISOString(),
                 timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
               },
-              recurrence: [`RRULE:FREQ=WEEKLY;UNTIL=${untilStr}`],
+              recurrence: [`RRULE:FREQ=WEEKLY;UNTIL=${untilStr};BYDAY=${byDay}`],
               reminders: {
                 useDefault: false,
                 overrides: [{ method: 'popup', minutes: 15 }],

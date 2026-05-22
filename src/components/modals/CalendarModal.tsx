@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, X, Download, CheckCircle2, RefreshCw } from 'lucide-react';
 import { Schedule } from '../../types';
 import { useCalendarStatus } from '../../hooks/useCalendarStatus';
-import { buildCalendarEventsFromSchedule, syncCalendarEvents } from '../../services/googleCalendarEdge';
+import { buildCalendarEventsFromSchedule, syncCalendarEvents } from '../../services/google/googleCalendarEdge';
 
 interface CalendarModalProps {
   isOpen: boolean;

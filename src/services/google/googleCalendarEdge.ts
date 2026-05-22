@@ -1,5 +1,5 @@
-import { Schedule } from '../types';
-import { supabase, isSupabaseConfigured } from './supabase';
+import { Schedule } from '../../types';
+import { supabase, isSupabaseConfigured } from '../supabase/supabaseClient';
 
 export interface CalendarEventInput {
   summary: string;
@@ -29,7 +29,18 @@ interface SyncCalendarResponse {
 
 const getFirstDateOfDay = (startDate: Date, dayName: string): Date => {
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const targetIndex = days.indexOf(dayName);
+  
+  // Map Spanish day names to English for calculations
+  const dayEnMap: Record<string, string> = {
+    'Lunes': 'Monday',
+    'Martes': 'Tuesday',
+    'Miércoles': 'Wednesday',
+    'Jueves': 'Thursday',
+    'Viernes': 'Friday',
+  };
+  
+  const mappedDay = dayEnMap[dayName] || dayName;
+  const targetIndex = days.indexOf(mappedDay);
   if (targetIndex === -1) return startDate;
 
   const resultDate = new Date(startDate);

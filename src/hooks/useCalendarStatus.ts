@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { supabase, isSupabaseConfigured } from '../services/supabase';
+import { supabase, isSupabaseConfigured } from '../services/supabase/supabaseClient';
 
 export interface CalendarTokens {
   access_token: string;

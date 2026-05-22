@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Calendar, Trash2, Plus, ArrowLeft, Check, CheckSquare } from 'lucide-react';
-import { UserProfile } from '../../types';
+import { UserProfile } from '../../../types';
 
 interface ScheduleSummary {
   id: string;
@@ -9,7 +9,7 @@ interface ScheduleSummary {
   last_updated: string;
 }
 
-interface ScheduleListProps {
+interface SavedSchedulesListProps {
   user?: UserProfile;
   schedules: ScheduleSummary[];
   onOpen: (id: string) => void;
@@ -20,7 +20,7 @@ interface ScheduleListProps {
   onBack?: () => void;
 }
 
-const ScheduleList: React.FC<ScheduleListProps> = ({
+export const SavedSchedulesList: React.FC<SavedSchedulesListProps> = ({
   user,
   schedules,
   onOpen,
@@ -76,8 +76,8 @@ const ScheduleList: React.FC<ScheduleListProps> = ({
             </button>
           )}
           <div>
-            <h2 className="headline-md text-on-surface">Mis Horarios</h2>
-            <p className="text-sm text-on-surface-variant mt-0.5">
+            <h2 className="headline-md text-on-surface text-left">Mis Horarios</h2>
+            <p className="text-sm text-on-surface-variant mt-0.5 text-left">
               <span className="inline-flex items-center gap-1.5 bg-primary-fixed text-on-primary-fixed-variant px-2.5 py-0.5 rounded-full text-xs font-semibold">
                 {schedules.length} guardados
               </span>
@@ -183,10 +183,10 @@ const ScheduleList: React.FC<ScheduleListProps> = ({
 
                 {/* Contenido */}
                 <div className="flex-grow min-w-0">
-                  <h4 className="font-bold text-on-surface text-base truncate group-hover:text-primary transition-colors duration-200">
+                  <h4 className="font-bold text-on-surface text-base truncate group-hover:text-primary transition-colors duration-200 text-left">
                     {schedule.title}
                   </h4>
-                  <p className="text-xs text-on-surface-variant font-medium uppercase tracking-wider mt-0.5">
+                  <p className="text-xs text-on-surface-variant font-medium uppercase tracking-wider mt-0.5 text-left">
                     {schedule.academic_period || `Actualizado: ${formattedDate}`}
                   </p>
                 </div>
@@ -231,5 +231,3 @@ const ScheduleList: React.FC<ScheduleListProps> = ({
     </div>
   );
 };
-
-export default ScheduleList;

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, BrainCircuit, Sparkles, FileSearch, CalendarRange } from 'lucide-react';
@@ -13,7 +12,7 @@ const MESSAGES = [
   "Casi listo, organizando tu semana..."
 ];
 
-const ProcessingView: React.FC = () => {
+export const ProcessingView: React.FC = () => {
   const [messageIndex, setMessageIndex] = useState(0);
 
   useEffect(() => {
@@ -44,7 +43,7 @@ const ProcessingView: React.FC = () => {
                animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
                transition={{ duration: 2, repeat: Infinity }}
              >
-                <BrainCircuit size={48} className="text-primary shadow-[0_0_20px_rgba(0,240,255,0.5)]" />
+                <BrainCircuit size={48} className="text-primary shadow-[0_0_20px_rgba(0,73,37,0.3)]" />
              </motion.div>
           </div>
 
@@ -54,13 +53,13 @@ const ProcessingView: React.FC = () => {
             transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
             className="absolute -inset-8"
           >
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-card p-2 rounded-lg border border-white/10 shadow-xl">
-               <FileSearch size={18} className="text-accent" />
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-card p-2 rounded-lg border border-outline/10 shadow-xl">
+               <FileSearch size={18} className="text-primary" />
             </div>
-            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 bg-card p-2 rounded-lg border border-white/10 shadow-xl">
+            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 bg-card p-2 rounded-lg border border-outline/10 shadow-xl">
                <CalendarRange size={18} className="text-secondary" />
             </div>
-            <div className="absolute left-0 top-1/2 -translate-y-1/2 bg-card p-2 rounded-lg border border-white/10 shadow-xl">
+            <div className="absolute left-0 top-1/2 -translate-y-1/2 bg-card p-2 rounded-lg border border-outline/10 shadow-xl">
                <Sparkles size={18} className="text-primary" />
             </div>
           </motion.div>
@@ -78,7 +77,7 @@ const ProcessingView: React.FC = () => {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="text-muted-foreground text-sm font-medium absolute inset-0"
+              className="text-on-background/70 text-sm font-medium absolute inset-0"
             >
               {MESSAGES[messageIndex]}
             </motion.p>
@@ -86,20 +85,18 @@ const ProcessingView: React.FC = () => {
         </div>
 
         {/* Progress Bar Container */}
-        <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
+        <div className="w-full h-1.5 bg-outline-variant/10 rounded-full overflow-hidden border border-outline-variant/5">
            <motion.div 
              initial={{ width: "0%" }}
              animate={{ width: "100%" }}
              transition={{ duration: 15, ease: "linear" }}
-             className="h-full bg-gradient-to-r from-primary via-cyan-400 to-purple-500 shadow-[0_0_10px_rgba(0,240,255,0.5)]"
+             className="h-full bg-gradient-to-r from-primary via-green-600 to-amber-500 shadow-[0_0_10px_rgba(0,73,37,0.3)]"
            />
         </div>
-        <p className="mt-4 text-[10px] text-muted-foreground/50 uppercase tracking-[0.2em] font-bold">
-          Schedule Parser Engine v2.0
+        <p className="mt-4 text-[10px] text-on-background/40 uppercase tracking-[0.2em] font-bold">
+          Schedule Parser Engine v3.0
         </p>
       </div>
     </div>
   );
 };
-
-export default ProcessingView;

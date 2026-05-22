@@ -1,23 +1,23 @@
-import { Schedule, ClassSession } from '../types';
+import { Schedule, ClassSession } from '../../types';
 
 const DAY_TO_ICS_DAY: Record<string, string> = {
-  'Monday': 'MO',
-  'Tuesday': 'TU',
-  'Wednesday': 'WE',
-  'Thursday': 'TH',
-  'Friday': 'FR',
-  'Saturday': 'SA',
-  'Sunday': 'SU'
+  'Lunes': 'MO',
+  'Martes': 'TU',
+  'Miércoles': 'WE',
+  'Jueves': 'TH',
+  'Viernes': 'FR',
+  'Sábado': 'SA',
+  'Domingo': 'SU'
 };
 
 const DAY_TO_NUM: Record<string, number> = {
-  'Sunday': 0,
-  'Monday': 1,
-  'Tuesday': 2,
-  'Wednesday': 3,
-  'Thursday': 4,
-  'Friday': 5,
-  'Saturday': 6
+  'Domingo': 0,
+  'Lunes': 1,
+  'Martes': 2,
+  'Miércoles': 3,
+  'Jueves': 4,
+  'Viernes': 5,
+  'Sábado': 6
 };
 
 // Formats a JS Date to ICS Datetime YYYYMMDDTHHMMSS (Floating local time)
@@ -66,13 +66,15 @@ export function generateICS(schedule: Schedule, semesterStart: Date, semesterEnd
     // Format strings
     const dtStart = formatICSDate(firstStart);
     const dtEnd = formatICSDate(firstEnd);
-    const rule = `FREQ=WEEKLY;UNTIL=${untilDateStr};BYDAY=${DAY_TO_ICS_DAY[session.day]}`;
+    
+    const byday = DAY_TO_ICS_DAY[session.day] || 'MO';
+    const rule = `FREQ=WEEKLY;UNTIL=${untilDateStr};BYDAY=${byday}`;
 
     // Random UID
     const uid = `${crypto.randomUUID()}@inforario.utm`;
     // Add Z for current stamp UTC
     const now = new Date();
-    const dtStamp = `${now.getUTCFullYear()}${String(now.getUTCMonth()+1).padStart(2,'0')}${String(now.getUTCDate()).padStart(2,'0')}T${String(now.getUTCHours()).padStart(2,'0')}${String(now.getUTCMinutes()).padStart(2,'0')}${String(now.getUTCSeconds()).padStart(2,'0')}Z`;
+    const dtStamp = `${now.getUTCFullYear()}${String(now.getUTCMonth()+1).padStart(2,'0')}${String(now.getUTCDate()).padStart(2,'0')}T${String(now.getUTCHours()).padStart(2,'0')}0000Z`;
 
     vcalendar.push(
       'BEGIN:VEVENT',
@@ -94,7 +96,9 @@ export function generateICS(schedule: Schedule, semesterStart: Date, semesterEnd
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `horario_${schedule.academic_period.replace(/\\s+/g, '_')}.ics`;
+  
+  const cleanPeriod = (schedule.academic_period || 'horario').replace(/\s+/g, '_');
+  a.download = `horario_${cleanPeriod}.ics`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

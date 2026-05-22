@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../../types';
-import { supabase } from '../../services/supabase';
+import { supabase } from '../../services/supabase/supabaseClient';
 import { User, LogOut, Save, Camera } from 'lucide-react';
 
 interface ProfilePageProps {
