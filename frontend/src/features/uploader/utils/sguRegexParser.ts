@@ -1,0 +1,682 @@
+import { ClassSession } from "../../../types";
+
+// ------------------------------------------------------------------
+// INTERFACES
+// ------------------------------------------------------------------
+interface ParseResult {
+  sessions: ClassSession[];
+  faculty?: string;
+  academic_period?: string;
+  student_name?: string;
+  career?: string;
+}
+
+interface TextItem {
+  text: string;
+  x: number;
+  y: number;
+  page?: number;
+}
+
+// ------------------------------------------------------------------
+// DAY DETECTION MAP (español → inglés)
+// ------------------------------------------------------------------
+const DAY_MAP: Record<string, 'Lunes' | 'Martes' | 'Miércoles' | 'Jueves' | 'Viernes'> = {
+  'lunes': 'Lunes',
+  'martes': 'Martes',
+  'miercoles': 'Miércoles',
+  'jueves': 'Jueves',
+  'viernes': 'Viernes',
+};
+
+const SUBJECT_COLORS = ['#22C55E', '#3B82F6', '#F97316', '#EF4444', '#A855F7', '#06B6D4', '#EAB308'];
+
+const getSubjectColor = (subject: string, subjectColors: Map<string, string>) => {
+  const key = subject.trim().toUpperCase();
+  const existing = subjectColors.get(key);
+  if (existing) return existing;
+  const color = SUBJECT_COLORS[subjectColors.size % SUBJECT_COLORS.length];
+  subjectColors.set(key, color);
+  return color;
+};
+
+// ------------------------------------------------------------------
+// NORMALIZACIÓN DE NOMBRES DE DOCENTES
+// ------------------------------------------------------------------
+const TITLE_PREFIXES = /\b(ing|lic|dr|dra|msc|mgtr|phd|abg|arq|econ|prof|sr|sra|srta)\.?\s*/gi;
+
+function normalizeTeacherName(rawName: string): string {
+  if (!rawName || rawName.trim().length === 0) return 'Sin asignar';
+  
+  let name = rawName.trim();
+  
+  // Skip temporal/system-generated teacher names
+  if (/^TEMP\s/i.test(name) || /TEMPORAL/i.test(name)) return 'Sin asignar';
+  
+  // Remove title prefixes
+  name = name.replace(TITLE_PREFIXES, '').trim();
+  name = name.replace(TITLE_PREFIXES, '').trim(); // Run twice for double titles
+  
+  if (!name) return rawName.trim();
+  
+  // UTM format is: LASTNAME1 LASTNAME2 FIRSTNAME1 FIRSTNAME2
+  // We want: Firstname1 Lastname1
+  const parts = name.split(/\s+/).filter(p => p.length > 0);
+  
+  if (parts.length >= 3) {
+    // Assume: APELLIDO1 APELLIDO2 NOMBRE1 [NOMBRE2...]
+    const firstName = capitalize(parts[2]);
+    const lastName = capitalize(parts[0]);
+    return `${firstName} ${lastName}`;
+  } else if (parts.length === 2) {
+    return `${capitalize(parts[1])} ${capitalize(parts[0])}`;
+  }
+  
+  return capitalize(parts[0] || name);
+}
+
+function capitalize(str: string): string {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
+
+// ------------------------------------------------------------------
+// NORMALIZACIÓN DE UBICACIÓN (Código de Ambiente UTM)
+// ------------------------------------------------------------------
+// UTM format: "1-59-PISO-AULA-TIPO" 
+// Example: "1-59-2-04-A" → "Aula 204 - Piso 2"
+// Example: "1-59-3-06-LC" → "Lab. Computación 306 - Piso 3"
+function normalizeLocation(codAmb: string, tipo?: string): string {
+  if (!codAmb || codAmb.trim() === '') return 'Sin asignar';
+  
+  const match = codAmb.match(/\d+-\d+-(\d+)-(\d+)-?([\w]*)/);
+  if (!match) {
+    // Para otras facultades (ej. administrativas) que no siguen el patrón 1-59...
+    const cleanCod = codAmb.replace(/;$/, '').trim();
+    if (tipo && cleanCod) return `${tipo} ${cleanCod}`;
+    if (tipo) return tipo;
+    return cleanCod;
+  }
+  
+  const floor = parseInt(match[1]);
+  const room = match[2].padStart(2, '0');
+  const typeCode = match[3]?.toUpperCase() || '';
+  
+  const roomNumber = `${floor}${room}`;
+  
+  // Determine room type from the type code or explicit TIPO field
+  if (typeCode === 'LC' || (tipo && /laboratorio/i.test(tipo))) {
+    return `Lab. Computación ${roomNumber} - Piso ${floor}`;
+  }
+  
+  return `Aula ${roomNumber} - Piso ${floor}`;
+}
+
+// ------------------------------------------------------------------
+// DETECCIÓN DE PERÍODOS ACADÉMICOS
+// ------------------------------------------------------------------
+function normalizeAcademicPeriod(raw: string): string {
+  if (!raw) return '';
+  
+  // Input: "ABRIL DE 2026 HASTA AGOSTO DE 2026"
+  // Input: "SEPTIEMBRE DEL 2025 HASTA ENERO DEL 2026"
+  // Output: "ABRIL 2026 - AGOSTO 2026"
+  const match = raw.match(/([A-ZÁÉÍÓÚÜÑa-záéíóúüñ]+)\s+(?:DE(?:L)?)\s+(\d{4})\s+HASTA\s+([A-ZÁÉÍÓÚÜÑa-záéíóúüñ]+)\s+(?:DE(?:L)?)\s+(\d{4})/i);
+  if (match) {
+    return `${match[1].toUpperCase()} ${match[2]} - ${match[3].toUpperCase()} ${match[4]}`;
+  }
+  return raw.trim().toUpperCase();
+}
+
+// ------------------------------------------------------------------
+// PDF PARSING PRINCIPAL — Diseñado para SGA UTM
+// ------------------------------------------------------------------
+
+async function parsePDF(base64Data: string): Promise<ParseResult> {
+  const pdfjsLib = await import('pdfjs-dist');
+  
+  // Configure worker — use CDN in browser, disable in Node.js for testing
+  const isBrowser = typeof window !== 'undefined';
+  if (isBrowser) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+  }
+  
+  // Decode base64 to Uint8Array
+  const binaryString = typeof atob !== 'undefined' 
+    ? atob(base64Data) 
+    : Buffer.from(base64Data, 'base64').toString('binary');
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  
+  const loadingTask = pdfjsLib.getDocument({ data: bytes });
+  const pdf = await loadingTask.promise;
+  
+  // Collect all text items from all pages
+  const allItems: TextItem[] = [];
+  
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+    const page = await pdf.getPage(pageNum);
+    const textContent = await page.getTextContent();
+    const viewport = page.getViewport({ scale: 1.0 });
+    
+    for (const item of textContent.items) {
+      if ('str' in item && item.str.trim()) {
+        const tx = item.transform;
+        allItems.push({
+          text: item.str.trim(),
+          x: Math.round(tx[4]),
+          y: Math.round(viewport.height - tx[5]),
+          page: pageNum,
+        });
+      }
+    }
+  }
+  
+  if (allItems.length === 0) {
+    throw new Error('No se pudo extraer texto del PDF. El archivo puede estar corrupto o ser un escaneo.');
+  }
+  
+  // 1. EXTRAER METADATOS DEL ENCABEZADO
+  const metadata = extractMetadata(allItems);
+  
+  // 2. EXTRAER BLOQUES DE MATERIAS
+  const facultyName = metadata.faculty || 'Sin asignar';
+  let sessions = extractSubjectBlocks(allItems, facultyName);
+  
+  // 3. RESOLVER CONFLICTOS U OVERLAPS (No destructivo)
+  sessions = resolveConflicts(sessions);
+  
+  return {
+    sessions,
+    faculty: metadata.faculty,
+    academic_period: metadata.academicPeriod,
+    student_name: metadata.studentName,
+    career: metadata.career,
+  };
+}
+
+// ------------------------------------------------------------------
+// EXTRACT METADATA FROM HEADER
+// ------------------------------------------------------------------
+interface Metadata {
+  faculty?: string;
+  academicPeriod?: string;
+  studentName?: string;
+  career?: string;
+  level?: string;
+}
+
+function extractMetadata(items: TextItem[]): Metadata {
+  const result: Metadata = {};
+  
+  // Header items are in the top portion of page 1 (y < 210)
+  const headerItems = items.filter(i => (i.page === 1 || !i.page) && i.y < 210);
+  
+  // Build a map of key-value pairs from header
+  for (let idx = 0; idx < headerItems.length; idx++) {
+    const item = headerItems[idx];
+    const text = item.text.toUpperCase();
+    
+    if (text.includes('PERIODO:') || text === 'PERIODO:') {
+      const value = findValueAfterLabel(headerItems, idx);
+      if (value) result.academicPeriod = normalizeAcademicPeriod(value);
+    }
+    
+    if (text.includes('FACULTAD:') || text === 'FACULTAD:') {
+      const value = findValueAfterLabel(headerItems, idx);
+      if (value) result.faculty = value.toUpperCase();
+    }
+    
+    if (text.includes('ESCUELA:') || text === 'ESCUELA:') {
+      const value = findValueAfterLabel(headerItems, idx);
+      if (value) result.career = value.toUpperCase();
+    }
+    
+    if (text.includes('ESTUDIANTE:') || text === 'ESTUDIANTE:') {
+      const value = findValueAfterLabel(headerItems, idx);
+      if (value) result.studentName = value;
+    }
+    
+    if (text.includes('NIVEL:') || text === 'NIVEL:') {
+      const value = findValueAfterLabel(headerItems, idx);
+      if (value) result.level = value;
+    }
+  }
+  
+  return result;
+}
+
+function findValueAfterLabel(items: TextItem[], labelIdx: number): string | null {
+  const label = items[labelIdx];
+  for (let i = labelIdx + 1; i < items.length; i++) {
+    const candidate = items[i];
+    if (Math.abs(candidate.y - label.y) <= 5 && candidate.x > label.x) {
+      return candidate.text;
+    }
+  }
+  return null;
+}
+
+// ------------------------------------------------------------------
+// EXTRACT SUBJECT BLOCKS
+// ------------------------------------------------------------------
+function extractSubjectBlocks(items: TextItem[], faculty: string): ClassSession[] {
+  const sessions: ClassSession[] = [];
+  const subjectColors = new Map<string, string>();
+  
+  const COL = {
+    SUBJECT_MAX_X: 170,
+    DOCENTE_MIN_X: 260,
+    DOCENTE_MAX_X: 415,
+    HORARIO_MIN_X: 495,
+  };
+  
+  const pages = Array.from(new Set(items.map(i => i.page || 1))).sort((a, b) => a - b);
+  
+  for (const pageNum of pages) {
+    const pageItems = items.filter(i => (i.page || 1) === pageNum);
+    
+    const asignaturaHeaders = pageItems.filter(i => i.text === 'ASIGNATURA');
+    const dataStartY = asignaturaHeaders.length > 0 
+      ? Math.min(...asignaturaHeaders.map(h => h.y)) + 15 
+      : 230;
+    
+    const headerTexts = ['ASIGNATURA', 'NIVEL', 'PARAL.', 'CREDI.', 'DOCENTE', 'DEPARTAMENTO', 'HORARIO Y AMBIENTE'];
+    const footerTexts = ['LEYENDAS', 'DESCRIPCION', 'LEYENDA', 'DESCRIPCIÓN', 'Sistema de Gestión', 'APROBADO', 'PENDIENTE', 'PARALELO QUE', 'AQUELLOS PARALELOS'];
+    
+    // 1. Identify subjects on this page
+    const subjectItems = pageItems.filter(i => 
+      i.y >= dataStartY && 
+      i.x < COL.SUBJECT_MAX_X && 
+      !headerTexts.includes(i.text) && 
+      !footerTexts.some(ft => i.text.includes(ft)) &&
+      !i.text.startsWith('NOTA:') &&
+      i.text.length >= 3
+    );
+    
+    interface TempSubject {
+      y: number;
+      items: TextItem[];
+      name?: string;
+      docenteItems?: TextItem[];
+      teacher?: string;
+    }
+    
+    const subjects: TempSubject[] = [];
+    for (const item of subjectItems) {
+      const existing = subjects.find(s => Math.abs(s.y - item.y) < 15);
+      if (existing) {
+        existing.items.push(item);
+        existing.y = (existing.y * (existing.items.length - 1) + item.y) / existing.items.length;
+      } else {
+        subjects.push({
+          y: item.y,
+          items: [item]
+        });
+      }
+    }
+    
+    subjects.sort((a, b) => a.y - b.y);
+    
+    for (const sub of subjects) {
+      sub.name = sub.items
+        .sort((a, b) => a.y - b.y)
+        .map(i => i.text)
+        .join(' ')
+        .replace(/\s*\([A-Z0-9\s-]+\)\s*/gi, '')
+        .replace(/^(TECNOLOG[IÍ]AS DE LA\s*)+/i, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+    
+    if (subjects.length === 0) continue;
+    
+    // 2. Identify docente name items for each subject
+    const docenteItems = pageItems.filter(i => 
+      i.y >= dataStartY && 
+      i.x >= COL.DOCENTE_MIN_X && i.x < COL.DOCENTE_MAX_X &&
+      !headerTexts.includes(i.text) && 
+      !footerTexts.some(ft => i.text.includes(ft))
+    );
+    
+    for (const sub of subjects) {
+      sub.docenteItems = [];
+    }
+    for (const item of docenteItems) {
+      let closestSub: TempSubject | null = null;
+      let minDistance = Infinity;
+      for (const sub of subjects) {
+        const dist = Math.abs(sub.y - item.y);
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestSub = sub;
+        }
+      }
+      if (closestSub) {
+        closestSub.docenteItems.push(item);
+      }
+    }
+    
+    for (const sub of subjects) {
+      const rawTeacher = (sub.docenteItems || [])
+        .sort((a, b) => a.y - b.y)
+        .map(i => i.text)
+        .join(' ');
+      sub.teacher = normalizeTeacherName(rawTeacher);
+    }
+    
+    // 3. Identify schedule entry headers in the schedule column
+    const scheduleItems = pageItems.filter(i => 
+      i.y >= dataStartY && 
+      i.x >= COL.HORARIO_MIN_X &&
+      !headerTexts.includes(i.text) && 
+      !footerTexts.some(ft => i.text.includes(ft))
+    );
+    
+    const dayTimeRegex = /(?:-\s*)?\b(LUNES|MARTES|MI[EÉ]RCOLES|JUEVES|VIERNES)\b\s*\((\d{1,2}):(\d{2}):\d{2}-(\d{1,2}):(\d{2}):\d{2}\)/i;
+    const virtualRegex = /(?:MATERIA|ASIGNATURA)\s+VIRTUAL/i;
+    
+    interface EntryHeader {
+      y: number;
+      text: string;
+      isVirtual: boolean;
+      items: TextItem[];
+    }
+    
+    const entryHeaders: EntryHeader[] = [];
+    const nonHeaderItems: TextItem[] = [];
+    
+    for (const item of scheduleItems) {
+      const isDayTime = dayTimeRegex.test(item.text);
+      const isVirtual = virtualRegex.test(item.text);
+      if (isDayTime || isVirtual) {
+        entryHeaders.push({
+          y: item.y,
+          text: item.text,
+          isVirtual,
+          items: [item]
+        });
+      } else {
+        nonHeaderItems.push(item);
+      }
+    }
+    
+    entryHeaders.sort((a, b) => a.y - b.y);
+    
+    for (const item of nonHeaderItems) {
+      let targetHeader: EntryHeader | null = null;
+      for (let j = entryHeaders.length - 1; j >= 0; j--) {
+        if (entryHeaders[j].y <= item.y) {
+          targetHeader = entryHeaders[j];
+          break;
+        }
+      }
+      if (!targetHeader && entryHeaders.length > 0) {
+        targetHeader = entryHeaders[0];
+      }
+      if (targetHeader) {
+        targetHeader.items.push(item);
+      }
+    }
+    
+    for (const header of entryHeaders) {
+      const allText = header.items
+        .sort((a, b) => a.y - b.y)
+        .map(i => i.text)
+        .join('\n');
+      
+      let location = 'Sin asignar';
+      if (header.isVirtual) {
+        location = 'Materia Virtual';
+      }
+      
+      const codAmbMatch = allText.match(/COD\.\s*AMB\.?:?\s*(\S+)/i);
+      const tipoMatch = allText.match(/TIPO:\s*([^;\n]+)/i);
+      const lugarMatch = allText.match(/LUGAR:\s*(.+?)(?:\s*\(|$|\n)/m);
+      
+      if (codAmbMatch) {
+        const codAmb = codAmbMatch[1].replace(/;$/, '');
+        const tipo = tipoMatch ? tipoMatch[1].trim() : '';
+        const normLoc = normalizeLocation(codAmb, tipo);
+        if (normLoc !== 'Sin asignar') {
+          location = normLoc;
+        }
+      } else if (lugarMatch && location === 'Sin asignar') {
+        location = lugarMatch[1].trim();
+      }
+      
+      let closestSub: TempSubject | null = null;
+      let minDistance = Infinity;
+      for (const sub of subjects) {
+        const dist = Math.abs(sub.y - header.y);
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestSub = sub;
+        }
+      }
+      
+      if (!closestSub || !closestSub.name) continue;
+      
+      const subjectKey = closestSub.name.toUpperCase();
+      const subjectColor = getSubjectColor(subjectKey, subjectColors);
+      
+      if (header.isVirtual) {
+        sessions.push({
+          id: crypto.randomUUID(),
+          subject: subjectKey,
+          subject_faculty: faculty,
+          day: undefined,
+          startTime: undefined,
+          endTime: undefined,
+          teacher: closestSub.teacher || 'Sin asignar',
+          location: 'Virtual',
+          floor: 'N/A',
+          isVirtual: true,
+          conflict: false,
+          color: subjectColor,
+        });
+      } else {
+        const match = header.text.match(dayTimeRegex);
+        if (match) {
+          const dayMatch = header.text.match(/\b(LUNES|MARTES|MI[EÉ]RCOLES|JUEVES|VIERNES)\b/i);
+          const timesMatch = header.text.match(/\((\d{1,2}):(\d{2}):\d{2}-(\d{1,2}):(\d{2}):\d{2}\)/i);
+          
+          if (dayMatch && timesMatch) {
+            const dayName = dayMatch[1].toLowerCase().replace('é', 'e').replace('í', 'i');
+            const day = DAY_MAP[dayName];
+            
+            if (day) {
+              const floorMatch = location.match(/Piso\s*(\d+)/i);
+              sessions.push({
+                id: crypto.randomUUID(),
+                subject: subjectKey,
+                subject_faculty: faculty,
+                day,
+                startTime: `${timesMatch[1].padStart(2, '0')}:${timesMatch[2]}`,
+                endTime: `${timesMatch[3].padStart(2, '0')}:${timesMatch[4]}`,
+                teacher: closestSub.teacher || 'Sin asignar',
+                location,
+                floor: floorMatch?.[1] || 'N/A',
+                isVirtual: false,
+                conflict: false,
+                color: subjectColor,
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+  return sessions;
+}
+
+// ------------------------------------------------------------------
+// IMAGE PARSING con Tesseract.js (OCR) — fallback
+// ------------------------------------------------------------------
+async function parseImage(base64Data: string, mimeType: string): Promise<ParseResult> {
+  const Tesseract = await import('tesseract.js');
+  const imageDataUrl = `data:${mimeType};base64,${base64Data}`;
+  
+  const result = await Tesseract.recognize(imageDataUrl, 'spa', {
+    logger: (m: any) => {
+      if (m.status === 'recognizing text') {
+        console.log(`OCR Progress: ${Math.round(m.progress * 100)}%`);
+      }
+    }
+  });
+  
+  const text = result.data.text;
+  
+  if (!text || text.trim().length < 20) {
+    throw new Error('No se pudo extraer texto de la imagen. Asegúrate de que sea legible y contenga un horario válido.');
+  }
+  
+  return parseRawText(text);
+}
+
+// ------------------------------------------------------------------
+// PARSE RAW TEXT (fallback for OCR or other text sources)
+// ------------------------------------------------------------------
+function parseRawText(text: string): ParseResult {
+  const sessions: ClassSession[] = [];
+  const subjectColors = new Map<string, string>();
+  let faculty: string | undefined;
+  let academicPeriod: string | undefined;
+  
+  const facultyMatch = text.match(/FACULTAD:\s*(.+)/i);
+  if (facultyMatch) faculty = `FACULTAD DE ${facultyMatch[1].trim().toUpperCase()}`;
+  
+  const periodoMatch = text.match(/PERIODO:\s*(.+)/i);
+  if (periodoMatch) academicPeriod = normalizeAcademicPeriod(periodoMatch[1].trim());
+  
+  const lines = text.split('\n');
+  
+  let currentSubject = '';
+  let currentDocente = '';
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    const dayTimeMatch = line.match(/(?:-\s*)?\b(LUNES|MARTES|MI[EÉ]RCOLES|JUEVES|VIERNES)\b\s*\((\d{1,2}):(\d{2}):\d{2}-(\d{1,2}):(\d{2}):\d{2}\)/i);
+    
+    if (dayTimeMatch) {
+      const dayName = dayTimeMatch[1].toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const day = DAY_MAP[dayName];
+      
+      if (day && currentSubject) {
+        const subjectColor = getSubjectColor(currentSubject, subjectColors);
+        let location = 'Sin asignar';
+        for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+          const codMatch = lines[j].match(/COD\.\s*AMB\.?:?\s*(\S+)/i);
+          const tipoMatch = lines[j].match(/TIPO:\s*([^;]+)/i);
+          if (codMatch) {
+            location = normalizeLocation(codMatch[1].replace(/;$/, ''), tipoMatch?.[1]?.trim());
+            break;
+          }
+        }
+        
+        sessions.push({
+          id: crypto.randomUUID(),
+          subject: currentSubject,
+          day,
+          startTime: `${dayTimeMatch[2].padStart(2, '0')}:${dayTimeMatch[3]}`,
+          endTime: `${dayTimeMatch[4].padStart(2, '0')}:${dayTimeMatch[5]}`,
+          teacher: currentDocente || 'Sin asignar',
+          subject_faculty: faculty,
+          location,
+          floor: (location.match(/Piso\s*(\d+)/i)?.[1]) || 'N/A',
+          isVirtual: /MATERIA\s+VIRTUAL/i.test(location),
+          conflict: false,
+          color: subjectColor,
+        });
+      }
+    }
+    
+    if (line.length > 10 && /^[A-ZÁÉÍÓÚÜÑ\s()]+$/.test(line) && !line.includes('LUGAR:') && !line.includes('COD.') && !line.includes('LEYENDA')) {
+      if (!line.includes('LUNES') && !line.includes('MARTES') && !line.includes('JUEVES') && !line.includes('VIERNES')) {
+        currentSubject = line
+          .replace(/\s*\([A-Z0-9\s-]+\)\s*/gi, '')
+          .replace(/^(TECNOLOG[IÍ]AS DE LA\s*)+/i, '')
+          .trim();
+      }
+    }
+  }
+  
+  return { sessions: resolveConflicts(sessions), faculty, academic_period: academicPeriod };
+}
+
+// ------------------------------------------------------------------
+// RESOLUCIÓN DE CONFLICTOS DE HORARIO (No destructivo)
+// ------------------------------------------------------------------
+export function resolveConflicts(sessions: ClassSession[]): ClassSession[] {
+  if (sessions.length <= 1) return sessions;
+
+  const schedulable = sessions.filter((s) => s.day && s.startTime && s.endTime);
+  const unscheduled = sessions.filter((s) => !s.day || !s.startTime || !s.endTime);
+  
+  // Reset conflicts
+  for (const s of sessions) {
+    s.conflict = false;
+  }
+  
+  // Sort by start time so we predictably evaluate conflicts
+  schedulable.sort((a, b) => {
+    if (a.day !== b.day) return (a.day || '').localeCompare(b.day || '');
+    return (a.startTime || '').localeCompare(b.startTime || '');
+  });
+  
+  for (let i = 0; i < schedulable.length; i++) {
+    for (let j = i + 1; j < schedulable.length; j++) {
+      const s1 = schedulable[i];
+      const s2 = schedulable[j];
+      
+      if (s1.day === s2.day) {
+        const timeToMins = (time: string) => {
+          const [h, m] = time.split(':').map(Number);
+          return h * 60 + m;
+        };
+        
+        const start1 = timeToMins(s1.startTime || '00:00');
+        const end1 = timeToMins(s1.endTime || '00:00');
+        const start2 = timeToMins(s2.startTime || '00:00');
+        const end2 = timeToMins(s2.endTime || '00:00');
+        
+        // Detect overlap
+        if (start1 < end2 && start2 < end1) {
+          s1.conflict = true;
+          s2.conflict = true;
+        }
+      }
+    }
+  }
+  
+  return [...schedulable, ...unscheduled];
+}
+
+// ------------------------------------------------------------------
+// FUNCIÓN PRINCIPAL EXPORTADA
+// ------------------------------------------------------------------
+export const parseScheduleFile = async (base64Data: string, mimeType: string): Promise<ParseResult> => {
+  const cleanBase64 = base64Data.replace(/^data:(.*);base64,/, "");
+  
+  try {
+    if (mimeType === 'application/pdf') {
+      return await parsePDF(cleanBase64);
+    } else if (mimeType.startsWith('image/')) {
+      return await parseImage(cleanBase64, mimeType);
+    } else {
+      throw new Error(`Tipo de archivo no soportado: ${mimeType}`);
+    }
+  } catch (error: any) {
+    console.error("Schedule Parse Error:", error);
+    
+    if (error.message?.includes('No se pudo') || error.message?.includes('Tipo de archivo')) {
+      throw error;
+    }
+    
+    throw new Error("Error al analizar el horario. Por favor asegúrate de que el archivo sea legible y contenga un horario válido.");
+  }
+};

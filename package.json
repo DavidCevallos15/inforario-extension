@@ -1,36 +1,11 @@
 {
-  "name": "inforario-v2",
+  "name": "inforario-monorepo",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
-"scripts": {
-  "dev": "vite",
-  "start:supa": "supabase start",
-  "dev:web": "concurrently --names \"FUNC,VITE\" -c \"bgMagenta,bgCyan\" \"supabase functions serve extract-schedule --env-file ./supabase/functions/extract-schedule/.env\" \"vite\""
-},
-  "dependencies": {
-    "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.4.2",
-    "@supabase/supabase-js": "^2.103.3",
-    "clsx": "^2.1.1",
-    "framer-motion": "^11.0.24",
-    "jspdf": "^4.2.1",
-    "lucide-react": "^0.554.0",
-    "pdfjs-dist": "^4.10.38",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "simplex-noise": "^4.0.1",
-    "tailwind-merge": "^2.3.0",
-    "tesseract.js": "^5.1.1",
-    "three": "^0.181.2"
-  },
-  "devDependencies": {
-    "@types/gapi": "^0.0.47",
-    "@types/gapi.calendar": "^3.0.11",
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "concurrently": "^9.2.1",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+  "version": "1.0.0",
+  "scripts": {
+    "install:all": "npm install --prefix frontend",
+    "dev": "npm run dev --prefix frontend",
+    "dev:web": "npm run dev:web --prefix frontend",
+    "start:supa": "npm run start:supa --prefix frontend"
   }
 }
