@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "build": "tsc && vite build",
     "start:supa": "cd ../backend && supabase start",
     "dev:web": "concurrently --names \"FUNC,VITE\" -c \"bgMagenta,bgCyan\" \"cd ../backend && supabase functions serve extract-schedule --env-file ./supabase/functions/extract-schedule/.env\" \"vite\""
   },
