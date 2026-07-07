@@ -12,6 +12,7 @@
     "skipLibCheck": true,
     "types": [
       "node",
+      "chrome",
       "gapi",
       "gapi.calendar"
     ],

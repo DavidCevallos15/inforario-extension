@@ -1,27 +1,25 @@
-import { ChartBar, Calendar, Download, Save, Palette, Upload, LogIn } from "lucide-react";
+// ------------------------------------------------------------------
+// Constantes globales de la aplicación Inforario
+// ------------------------------------------------------------------
+// NOTA: Las credenciales de Supabase (SUPABASE_URL, SUPABASE_KEY) y
+// el objeto FEATURES fueron eliminados en la Fase 1 del refactor
+// como parte del desacoplamiento hacia un modelo local-first.
+// ------------------------------------------------------------------
 
-// Real Supabase Credentials
-// Configured with specific project keys provided by the user.
-export const SUPABASE_URL = "https://jmybcsusmazaxforhsms.supabase.co";
-export const SUPABASE_KEY = "sb_publishable_Sb2jQcuTd4OLQhloeIZTww_k95fFjdw";
-// Google Calendar
-// En tu archivo constants.ts
-// Safe process.env access
-const getEnvVar = (key: string) => {
+// Acceso seguro a variables de entorno
+const getEnvVar = (key: string): string => {
   try {
     if (typeof process !== 'undefined' && process.env) {
-      return process.env[key];
+      return process.env[key] || '';
     }
-  } catch (e) {
-    // Ignore error
+  } catch {
+    // Ignorar error en entornos donde process no existe
   }
-  return "";
+  return '';
 };
 
-// Try process.env first, then fallback to localStorage for browser-based configuration
-export const GOOGLE_CLIENT_ID = getEnvVar("GOOGLE_CLIENT_ID") || (typeof window !== 'undefined' ? localStorage.getItem('google_client_id') : "") || "303071798512-muiirok53evctbn1rdmtisl2f6rednbn.apps.googleusercontent.com";
-
-export const FEATURES = {
-  GUEST: ['UPLOAD', 'PROCESS', 'RESOLVE_CONFLICT'],
-  REGISTERED: ['UPLOAD', 'PROCESS', 'RESOLVE_CONFLICT', 'EDIT_NAME', 'SAVE_CLOUD', 'CUSTOMIZE_COLOR', 'DOWNLOAD_PDF', 'SYNC_CALENDAR']
-};
+// Google Calendar — ID de cliente para OAuth directo
+export const GOOGLE_CLIENT_ID =
+  getEnvVar('GOOGLE_CLIENT_ID') ||
+  (typeof window !== 'undefined' ? localStorage.getItem('google_client_id') : '') ||
+  '303071798512-muiirok53evctbn1rdmtisl2f6rednbn.apps.googleusercontent.com';

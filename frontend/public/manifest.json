@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "Inforario UTM",
+  "version": "2.0.0",
+  "description": "Convierte tu horario del SGU en un cronograma interactivo en un clic.",
+  "permissions": [
+    "declarativeNetRequest",
+    "webRequest",
+    "scripting",
+    "activeTab",
+    "storage",
+    "tabs",
+    "identity"
+  ],
+  "oauth2": {
+    "client_id": "269720990323-qeg8kei34ehfo931qaq62jrkeh5mmt1p.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/calendar.events"
+    ]
+  },
+  "host_permissions": [
+    "*://*.utm.edu.ec/*",
+    "*://sgu.utm.edu.ec/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.utm.edu.ec/*", "*://sgu.utm.edu.ec/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "action": {
+    "default_title": "Ver mi Horario Interactivo",
+    "default_popup": "index.html"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/*.js", "assets/*.mjs", "*.mjs"],
+      "matches": ["*://*.utm.edu.ec/*"]
+    }
+  ]
+}

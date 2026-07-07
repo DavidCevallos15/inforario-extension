@@ -1,4 +1,8 @@
-import { ClassSession } from "../../../types";
+import { ClassSession } from "../types";
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 // ------------------------------------------------------------------
 // INTERFACES
@@ -133,13 +137,6 @@ function normalizeAcademicPeriod(raw: string): string {
 // ------------------------------------------------------------------
 
 async function parsePDF(base64Data: string): Promise<ParseResult> {
-  const pdfjsLib = await import('pdfjs-dist');
-  
-  // Configure worker — use CDN in browser, disable in Node.js for testing
-  const isBrowser = typeof window !== 'undefined';
-  if (isBrowser) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
-  }
   
   // Decode base64 to Uint8Array
   const binaryString = typeof atob !== 'undefined' 

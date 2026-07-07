@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Schedule, ScheduleTheme, ClassSession } from '../../../types';
 
 interface UseScheduleCustomizerProps {

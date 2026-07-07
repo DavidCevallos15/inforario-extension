@@ -2,20 +2,6 @@ export * from './sgu';
 export * from './database';
 
 export enum AppView {
-  LANDING = 'LANDING',
+  EMPTY = 'EMPTY',
   DASHBOARD = 'DASHBOARD',
-  ABOUT = 'ABOUT',
-  LOGIN = 'LOGIN',
-  PROFILE = 'PROFILE',
-}
-
-export enum Feature {
-  UPLOAD = 'UPLOAD',
-  PROCESS = 'PROCESS',
-  RESOLVE_CONFLICT = 'RESOLVE_CONFLICT',
-  EDIT_NAME = 'EDIT_NAME',
-  SAVE_CLOUD = 'SAVE_CLOUD',
-  CUSTOMIZE_COLOR = 'CUSTOMIZE_COLOR',
-  DOWNLOAD_PDF = 'DOWNLOAD_PDF',
-  SYNC_CALENDAR = 'SYNC_CALENDAR',
 }

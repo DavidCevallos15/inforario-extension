@@ -12,9 +12,12 @@ import {
   FileText,
   Check,
   PenTool,
+  Cloud,
+  AlertCircle,
 } from 'lucide-react';
 import { Schedule, ClassSession, ScheduleTheme, DAYS } from '../../../types';
-import { saveScheduleToDB } from '../../../services/supabase/supabaseClient';
+import { useGoogleCalendar } from '../hooks/useGoogleCalendar';
+import { saveScheduleToLocal } from '../../../services/storage/scheduleStorage';
 import { generateICS } from '../../../services/ics/icsGenerator';
 import { useMediaQuery } from '../../../hooks/useMediaQuery';
 import { ScheduleGrid } from './ScheduleGrid';
@@ -27,10 +30,6 @@ interface ScheduleDashboardProps {
   currentSchedule: Schedule;
   setCurrentSchedule: React.Dispatch<React.SetStateAction<Schedule | null>>;
   onReset: () => void;
-  sessionUser: any;
-  userProfile: any;
-  deviceId: string;
-  fetchSchedules: (uid: string) => Promise<void>;
 }
 
 // Helper to convert Hex to RGB
@@ -54,10 +53,6 @@ export const ScheduleDashboard: React.FC<ScheduleDashboardProps> = ({
   currentSchedule,
   setCurrentSchedule,
   onReset,
-  sessionUser,
-  userProfile,
-  deviceId,
-  fetchSchedules,
 }) => {
   // UI States
   const [theme, setTheme] = useState<ScheduleTheme>('DEFAULT');
@@ -67,6 +62,13 @@ export const ScheduleDashboard: React.FC<ScheduleDashboardProps> = ({
   const [isExporting, setIsExporting] = useState(false);
   const [calendarModalOpen, setCalendarModalOpen] = useState(false);
   const [resetModalOpen, setResetModalOpen] = useState(false);
+  const [syncModalState, setSyncModalState] = useState<{
+    isOpen: boolean;
+    status: 'syncing' | 'success' | 'error';
+    message: string;
+  }>({ isOpen: false, status: 'syncing', message: '' });
+
+  const { syncScheduleToGoogle, isSyncing } = useGoogleCalendar();
 
   // Title Editing State
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -93,24 +95,23 @@ export const ScheduleDashboard: React.FC<ScheduleDashboardProps> = ({
     }
   };
 
-  const saveTitle = async () => {
+  const saveTitle = () => {
     if (currentSchedule) {
       const updatedSchedule = { ...currentSchedule, title: tempTitle };
       setCurrentSchedule(updatedSchedule);
 
-      // Persist change
-      if (deviceId && updatedSchedule.id) {
-        await saveScheduleToDB(deviceId, updatedSchedule);
-        fetchSchedules(deviceId); // Update saved schedules list
+      // Persistir cambio en almacenamiento local
+      if (updatedSchedule.id) {
+        saveScheduleToLocal(updatedSchedule);
       }
     }
     setIsEditingTitle(false);
   };
 
-  const handleColorChange = async (subject: string, color: string) => {
+  const handleColorChange = (subject: string, color: string) => {
     if (!currentSchedule) return;
 
-    // Update all sessions with this subject name
+    // Actualizar color en todas las sesiones de esta materia
     const updatedSessions = currentSchedule.sessions.map((s) =>
       s.subject === subject ? { ...s, color } : s
     );
@@ -118,15 +119,26 @@ export const ScheduleDashboard: React.FC<ScheduleDashboardProps> = ({
     const updatedSchedule = { ...currentSchedule, sessions: updatedSessions };
     setCurrentSchedule(updatedSchedule);
 
-    // Persist change
-    if (deviceId && updatedSchedule.id) {
-      await saveScheduleToDB(deviceId, updatedSchedule);
+    // Persistir cambio en almacenamiento local
+    if (updatedSchedule.id) {
+      saveScheduleToLocal(updatedSchedule);
     }
   };
 
   // Font Size Actions
   const handleZoomIn = () => setFontScale((prev) => Math.min(prev + 0.1, 1.5));
   const handleZoomOut = () => setFontScale((prev) => Math.max(prev - 0.1, 0.7));
+
+  const handleSync = async () => {
+    setActionsMenuOpen(false);
+    setSyncModalState({ isOpen: true, status: 'syncing', message: 'Exportando sesiones a tu calendario...' });
+    try {
+      await syncScheduleToGoogle(currentSchedule);
+      setSyncModalState({ isOpen: true, status: 'success', message: '¡Tu horario está ahora en Google Calendar!' });
+    } catch (e: any) {
+      setSyncModalState({ isOpen: true, status: 'error', message: e.message || 'Ocurrió un error inesperado al sincronizar.' });
+    }
+  };
 
   // PDF Generation Logic (Landscape A3)
   const handleDownload = async () => {
@@ -213,10 +225,7 @@ export const ScheduleDashboard: React.FC<ScheduleDashboardProps> = ({
 
       doc.setFontSize(10 * fontScale);
       doc.setTextColor(style.textMain[0], style.textMain[1], style.textMain[2]);
-      const studentName =
-        userProfile?.full_name ||
-        sessionUser?.user_metadata?.full_name ||
-        'ESTUDIANTE INVITADO';
+      const studentName = 'ESTUDIANTE';
       const dateStr = new Date().toLocaleDateString('es-ES', {
         year: 'numeric',
         month: 'long',
@@ -685,7 +694,7 @@ export const ScheduleDashboard: React.FC<ScheduleDashboardProps> = ({
                         setActionsMenuOpen(false);
                         setCalendarModalOpen(true);
                       }}
-                      className="w-full text-left px-4 py-3 hover:bg-surface-container text-sm text-on-surface font-medium flex items-center gap-3"
+                      className="w-full text-left px-4 py-3 hover:bg-surface-container text-sm text-on-surface font-medium flex items-center gap-3 border-b border-outline-variant/15"
                     >
                       <div className="w-8 h-8 bg-primary-fixed text-on-primary-fixed-variant rounded-lg flex items-center justify-center">
                         <CalIcon size={16} />
@@ -693,9 +702,21 @@ export const ScheduleDashboard: React.FC<ScheduleDashboardProps> = ({
                       <div className="flex flex-col">
                         <span>Archivo de Calendario</span>
                         <span className="text-[10px] text-on-surface-variant">
-                          Sincronización / Descarga (.ics)
+                          Descarga Manual (.ics)
                         </span>
                       </div>
+                    </button>
+                    <button 
+                      onClick={handleSync}
+                      disabled={isSyncing}
+                      className="flex items-center justify-center gap-2 w-full p-4 bg-[#4285F4]/10 hover:bg-[#4285F4]/20 text-[#4285F4] rounded-2xl transition-all border border-[#4285F4]/20"
+                    >
+                      {isSyncing ? (
+                        <RefreshCw className="animate-spin w-5 h-5" />
+                      ) : (
+                        <Cloud className="w-5 h-5" />
+                      )}
+                      <span className="font-medium">{isSyncing ? 'Sincronizando...' : 'Sincronizar con Google Calendar'}</span>
                     </button>
                   </div>
                 </>
@@ -744,7 +765,6 @@ export const ScheduleDashboard: React.FC<ScheduleDashboardProps> = ({
             ) : (
               <ScheduleGrid
                 schedule={currentSchedule}
-                isGuest={true}
                 onResolveConflict={handleConflictResolution}
                 theme={theme}
                 fontScale={fontScale}
@@ -779,6 +799,58 @@ export const ScheduleDashboard: React.FC<ScheduleDashboardProps> = ({
         onConfirm={(s, e) => generateICS(currentSchedule, s, e)}
         schedule={currentSchedule}
       />
+
+      {syncModalState.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-surface-container-lowest rounded-3xl p-8 max-w-sm w-full mx-4 editorial-shadow-lg flex flex-col items-center text-center animate-in zoom-in-95 duration-300">
+            {syncModalState.status === 'syncing' && (
+              <>
+                <div className="w-16 h-16 rounded-3xl bg-[#4285F4]/10 text-[#4285F4] flex items-center justify-center mb-6">
+                  <RefreshCw size={32} className="animate-spin" />
+                </div>
+                <h3 className="text-2xl font-bold text-on-surface mb-2">Sincronizando</h3>
+                <p className="text-on-surface-variant font-medium text-sm">
+                  {syncModalState.message}
+                </p>
+              </>
+            )}
+            {syncModalState.status === 'success' && (
+              <>
+                <div className="w-16 h-16 rounded-3xl bg-[#22C55E]/10 text-[#22C55E] flex items-center justify-center mb-6">
+                  <Check size={32} />
+                </div>
+                <h3 className="text-2xl font-bold text-on-surface mb-2">¡Completado!</h3>
+                <p className="text-on-surface-variant font-medium text-sm mb-8">
+                  {syncModalState.message}
+                </p>
+                <button
+                  onClick={() => setSyncModalState({ ...syncModalState, isOpen: false })}
+                  className="w-full py-3.5 bg-primary text-on-primary rounded-xl font-bold hover:opacity-90 transition-opacity"
+                >
+                  Entendido
+                </button>
+              </>
+            )}
+            {syncModalState.status === 'error' && (
+              <>
+                <div className="w-16 h-16 rounded-3xl bg-error-container text-error flex items-center justify-center mb-6">
+                  <AlertCircle size={32} />
+                </div>
+                <h3 className="text-2xl font-bold text-on-surface mb-2">No se pudo sincronizar</h3>
+                <p className="text-on-surface-variant font-medium text-sm mb-8">
+                  {syncModalState.message}
+                </p>
+                <button
+                  onClick={() => setSyncModalState({ ...syncModalState, isOpen: false })}
+                  className="w-full py-3.5 bg-surface-container text-on-surface rounded-xl font-bold hover:bg-surface-container-high transition-colors"
+                >
+                  Cerrar
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

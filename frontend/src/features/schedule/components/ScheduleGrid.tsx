@@ -9,7 +9,6 @@ import { Button } from '../../../components/ui/Button';
 
 interface ScheduleGridProps {
   schedule: Schedule;
-  isGuest: boolean;
   onResolveConflict: (session: ClassSession) => void;
   theme?: ScheduleTheme;
   fontScale?: number;
@@ -36,7 +35,6 @@ const FALLBACK_COLOR = '#22C55E';
 
 export const ScheduleGrid: React.FC<ScheduleGridProps> = ({
   schedule,
-  isGuest,
   onResolveConflict,
   theme = 'DEFAULT',
   fontScale = 1,
