@@ -564,63 +564,49 @@ export const ScheduleDashboard: React.FC<ScheduleDashboardProps> = ({
   return (
     <div className="animate-in fade-in duration-500 pt-2 relative z-10">
       {/* Horario Header */}
-      <div className="bg-surface-container-lowest rounded-xl editorial-shadow p-4 mb-4 relative z-50">
+      <div className="mb-6 relative z-50 px-2">
         <div className="flex flex-col lg:flex-row justify-between gap-4 items-start lg:items-center">
-          <div className="flex items-start gap-4 w-full lg:w-auto">
-            <div className="hidden sm:flex w-12 h-12 bg-primary rounded-xl items-center justify-center text-on-primary shrink-0">
-              <GraduationCap size={24} />
-            </div>
+          <div className="flex items-center gap-4 w-full lg:w-auto">
             <div className="flex-grow">
-              <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center gap-3">
                 {isEditingTitle ? (
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
                       value={tempTitle}
                       onChange={(e) => setTempTitle(e.target.value)}
-                      className="text-xl md:text-2xl font-bold text-on-surface border-b-2 border-primary outline-none bg-transparent min-w-[200px]"
+                      className="text-xl md:text-2xl font-bold text-blue-700 border-b-2 border-blue-700 outline-none bg-transparent min-w-[200px]"
                       autoFocus
                       onBlur={saveTitle}
                       onKeyDown={(e) => e.key === 'Enter' && saveTitle()}
                     />
                     <button
                       onClick={saveTitle}
-                      className="text-primary hover:text-primary-container"
+                      className="text-blue-700 hover:text-blue-800"
                     >
                       <Check size={20} />
                     </button>
                   </div>
                 ) : (
                   <h2
-                    className="text-xl md:text-2xl font-bold text-on-surface flex items-center gap-2 group cursor-pointer"
+                    className="text-xl md:text-2xl font-bold text-[#185bb5] flex items-center gap-2 group cursor-pointer"
                     onClick={startEditingTitle}
                   >
-                    {currentSchedule.title}
-                    <span className="opacity-0 group-hover:opacity-100 text-on-surface-variant">
-                      <PenTool size={14} />
+                    {currentSchedule.title} - {currentSchedule.faculty || 'CIENCIAS INFORMÁTICAS'}
+                    <span className="opacity-0 group-hover:opacity-100 text-[#185bb5]/60 transition-opacity">
+                      <PenTool size={16} />
                     </span>
                   </h2>
                 )}
               </div>
-              <p className="text-on-surface-variant font-medium text-sm mb-2 text-left">
-                {currentSchedule.faculty || 'FACULTAD DE CIENCIAS INFORMÁTICAS'}
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                {currentSchedule.academic_period && (
-                  <div className="flex items-center gap-2 bg-primary-fixed text-on-primary-fixed-variant px-3 py-1 rounded-full text-[10px] md:text-xs font-semibold uppercase">
-                    <CalIcon size={11} />
-                    {currentSchedule.academic_period}
-                  </div>
-                )}
-              </div>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center">
+          <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center justify-end">
             {/* Zoom Controls for Mobile Header */}
-            <div className="flex md:hidden items-center gap-1 bg-surface-container rounded-lg p-1 mr-2">
+            <div className="flex md:hidden items-center gap-1 bg-white border border-outline-variant/20 rounded-lg p-1 mr-2 shadow-sm">
               <button
                 onClick={handleZoomOut}
-                className="p-1.5 hover:bg-surface-container-high rounded text-on-surface-variant"
+                className="p-1.5 hover:bg-surface-container-low rounded text-on-surface-variant"
                 title="Disminuir letra"
               >
                 <ZoomOut size={16} />
@@ -630,29 +616,33 @@ export const ScheduleDashboard: React.FC<ScheduleDashboardProps> = ({
               </span>
               <button
                 onClick={handleZoomIn}
-                className="p-1.5 hover:bg-surface-container-high rounded text-on-surface-variant"
+                className="p-1.5 hover:bg-surface-container-low rounded text-on-surface-variant"
                 title="Aumentar letra"
               >
                 <ZoomIn size={16} />
               </button>
             </div>
+            
+            {/* Ocultar botones extra en desktop si se quiere puramente el diseño de la foto, pero como debemos mantener funcionalidad los hacemos sutiles */}
             <button
               onClick={() => setResetModalOpen(true)}
-              className="flex-1 lg:flex-none justify-center px-4 py-2 bg-surface-container text-on-surface rounded-lg text-sm font-semibold hover:bg-surface-container-high flex items-center gap-2 transition-colors"
+              className="hidden lg:flex justify-center p-2 text-on-surface-variant rounded-lg text-sm hover:bg-surface-container-low transition-colors"
               title="Nuevo horario"
             >
-              <RefreshCw size={16} /> Nuevo
+              <RefreshCw size={18} />
             </button>
             <button
               onClick={() => setCustomizerOpen(true)}
-              className="flex-1 lg:flex-none justify-center px-4 py-2 bg-surface-container text-on-surface rounded-lg text-sm font-semibold hover:bg-surface-container-high flex items-center gap-2 transition-colors"
+              className="hidden lg:flex justify-center p-2 text-on-surface-variant rounded-lg text-sm hover:bg-surface-container-low transition-colors"
+              title="Personalizar colores"
             >
-              <Palette size={16} /> Personalizar
+              <Palette size={18} />
             </button>
+            {/* Espacio para que queden alineados si se necesita */}
             <div className="relative z-50">
               <button
                 onClick={() => setActionsMenuOpen(!actionsMenuOpen)}
-                className="flex-1 lg:flex-none justify-center px-4 py-2 bg-secondary-container text-on-secondary-container rounded-lg text-sm font-bold flex items-center gap-2 shadow-editorial hover:scale-[1.02] transition-transform duration-200"
+                className="flex-1 lg:flex-none justify-center px-4 py-2 bg-white text-on-surface border border-outline-variant/30 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm hover:bg-surface-container-low transition-colors duration-200"
               >
                 <Download size={16} /> Exportar
                 <ChevronDown
@@ -729,7 +719,7 @@ export const ScheduleDashboard: React.FC<ScheduleDashboardProps> = ({
       {/* Grid / List Container */}
       <div
         id="schedule-export-container"
-        className="p-2 md:p-4 rounded-xl bg-surface-container-low editorial-shadow"
+        className="w-full"
       >
         <div className="flex flex-row gap-4 items-start">
           {/* Zoom controls for Desktop */}

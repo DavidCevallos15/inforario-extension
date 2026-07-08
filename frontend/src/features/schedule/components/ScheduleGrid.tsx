@@ -2,8 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Schedule, DAYS, ClassSession, ScheduleTheme } from '../../../types';
 import { AlertTriangle } from 'lucide-react';
 import { SubjectCard } from './SubjectCard';
-import { createPortal } from 'react-dom';
-import { getScheduleHoursRange, getScheduleHoursRange as calcHoursRange } from '../utils/timeSelectors';
+import { getScheduleHoursRange as calcHoursRange } from '../utils/timeSelectors';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 
@@ -14,17 +13,18 @@ interface ScheduleGridProps {
   fontScale?: number;
 }
 
+/** Convierte hex a RGB */
 const hexToRgb = (hex: string) => {
   const cleaned = hex.replace('#', '').trim();
-  if (cleaned.length !== 6) {
-    return { r: 0, g: 0, b: 0 };
-  }
-  const r = parseInt(cleaned.substring(0, 2), 16);
-  const g = parseInt(cleaned.substring(2, 4), 16);
-  const b = parseInt(cleaned.substring(4, 6), 16);
-  return { r, g, b };
+  if (cleaned.length !== 6) return { r: 0, g: 0, b: 0 };
+  return {
+    r: parseInt(cleaned.substring(0, 2), 16),
+    g: parseInt(cleaned.substring(2, 4), 16),
+    b: parseInt(cleaned.substring(4, 6), 16),
+  };
 };
 
+/** Determina el color de texto según la luminancia del fondo */
 const getTextColor = (bg: string) => {
   const { r, g, b } = hexToRgb(bg);
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
@@ -32,6 +32,15 @@ const getTextColor = (bg: string) => {
 };
 
 const FALLBACK_COLOR = '#22C55E';
+
+/** Nombres de días en español para los headers */
+const DAY_LABELS: Record<string, string> = {
+  Lunes: 'Lunes',
+  Martes: 'Martes',
+  Miércoles: 'Miércoles',
+  Jueves: 'Jueves',
+  Viernes: 'Viernes',
+};
 
 export const ScheduleGrid: React.FC<ScheduleGridProps> = ({
   schedule,
@@ -51,26 +60,24 @@ export const ScheduleGrid: React.FC<ScheduleGridProps> = ({
     [schedule.sessions]
   );
 
-  const { minHour, maxHour } = useMemo(() => {
-    return calcHoursRange(regularClasses);
-  }, [regularClasses]);
+  const { minHour, maxHour } = useMemo(() => calcHoursRange(regularClasses), [regularClasses]);
 
   const hours = Array.from({ length: maxHour - minHour }, (_, i) => i + minHour);
 
+  /** Calcula posición absoluta de una sesión en la grilla */
   const getPosition = (session: ClassSession) => {
-    if (!session.startTime || !session.endTime) {
-      return { top: '0px', height: '80px' };
-    }
+    if (!session.startTime || !session.endTime) return { top: '0px', height: '80px' };
     const [startH, startM] = session.startTime.split(':').map(Number);
     const [endH, endM] = session.endTime.split(':').map(Number);
     const startOffset = (startH - minHour) * 60 + startM;
     const duration = (endH * 60 + endM) - (startH * 60 + startM);
     return {
-      top: `${(startOffset / 60) * 82}px`, // slightly padded
+      top: `${(startOffset / 60) * 82}px`,
       height: `${(duration / 60) * 80}px`,
     };
   };
 
+  /** Retorna estilos por tema */
   const getThemeStyles = () => {
     switch (theme) {
       case 'MINIMALIST':
@@ -138,27 +145,23 @@ export const ScheduleGrid: React.FC<ScheduleGridProps> = ({
         };
       case 'DEFAULT':
       default:
-        // Academic Curator DEFAULT — verde menta
+        /* Estilo "Editorial Limpio" — fondo suave, tarjetas blancas con borde de color */
         return {
-          container: 'bg-surface-container-lowest rounded-[2rem] border border-outline-variant/20 overflow-hidden editorial-shadow p-2',
-          header: 'bg-surface-container-high text-on-surface border-r border-outline-variant/15 font-bold rounded-xl py-3 m-1',
-          timeCol: 'bg-surface-container-lowest text-on-surface-variant border-r border-outline-variant/15',
-          gridBg: 'bg-surface-container-lowest',
-          gridLine: 'border-outline-variant/15',
-          dayCol: 'border-r border-outline-variant/15',
-          event: (color: string) => {
-            const textColor = getTextColor(color);
-            return {
-              className: 'rounded-2xl transition-all duration-200 hover:scale-[1.02] hover:shadow-editorial-lg',
-              style: {
-                backgroundColor: color,
-                color: textColor,
-                borderLeftColor: textColor,
-                borderLeftWidth: '4px',
-                boxShadow: '0 6px 16px rgba(0,0,0,0.08)',
-              },
-            };
-          },
+          container: 'bg-[#eef2f7] rounded-2xl overflow-hidden p-3 md:p-5',
+          header: 'bg-white text-on-surface font-semibold rounded-xl py-3 mx-0.5 shadow-sm border border-outline-variant/15',
+          timeCol: 'text-on-surface-variant font-medium',
+          gridBg: 'bg-transparent',
+          gridLine: 'border-outline-variant/12',
+          dayCol: '',
+          event: (color: string) => ({
+            className: 'rounded-xl shadow-sm bg-white border border-outline-variant/10 hover:shadow-editorial transition-shadow',
+            style: {
+              borderLeftColor: color,
+              borderLeftWidth: '4px',
+              borderLeftStyle: 'solid' as const,
+              color: '#1b1c1c',
+            },
+          }),
         };
     }
   };
@@ -169,44 +172,39 @@ export const ScheduleGrid: React.FC<ScheduleGridProps> = ({
   const timeFontSize = 12 * fontScale;
   const detailsFontSize = 11 * fontScale;
 
-  const safeSlice = (value?: string, len = 3) => {
-    return value ? value.slice(0, len) : '';
-  };
-
   return (
     <div className="flex flex-col gap-8 w-full">
       <div className="w-full overflow-x-auto no-scrollbar">
         <div className="min-w-[900px] p-1">
           <div className={`w-full ${styles.container}`}>
             <div className="relative w-full">
-              {/* Header Days */}
-              <div className="grid grid-cols-[50px_1fr_1fr_1fr_1fr_1fr] sticky top-0 z-20">
+              {/* Header: Hora + Días */}
+              <div className="grid grid-cols-[60px_1fr_1fr_1fr_1fr_1fr] gap-1 mb-2">
                 <div
-                  className={`text-center font-bold flex items-center justify-center ${styles.header}`}
+                  className={`text-center flex items-center justify-center ${styles.header}`}
                   style={{ fontSize: `${headerFontSize}px` }}
                 >
-                  HORA
+                  Hora
                 </div>
                 {DAYS.map((day) => (
                   <div
                     key={day}
-                    className={`text-center uppercase tracking-wider flex items-center justify-center ${styles.header}`}
+                    className={`text-center tracking-wide flex items-center justify-center ${styles.header}`}
                     style={{ fontSize: `${headerFontSize}px` }}
                   >
-                    <span className="md:hidden">{safeSlice(day, 1)}</span>
-                    <span className="hidden md:inline">{safeSlice(day, 3)}</span>
+                    {DAY_LABELS[day] || day}
                   </div>
                 ))}
               </div>
 
-              {/* Grid Body */}
-              <div className={`grid grid-cols-[50px_1fr_1fr_1fr_1fr_1fr] relative ${styles.gridBg}`}>
-                {/* Time column */}
+              {/* Cuerpo de la Grilla */}
+              <div className={`grid grid-cols-[60px_1fr_1fr_1fr_1fr_1fr] gap-x-1 relative ${styles.gridBg}`}>
+                {/* Columna de Horas */}
                 <div className={`z-10 ${styles.timeCol}`}>
                   {hours.map((h) => (
                     <div
                       key={h}
-                      className={`h-[82px] border-b p-1 text-right pr-3 ${styles.gridLine} flex items-start justify-end pt-2 font-medium`}
+                      className={`h-[82px] border-b p-1 text-right pr-3 ${styles.gridLine} flex items-start justify-end pt-2`}
                       style={{ fontSize: `${timeFontSize}px` }}
                     >
                       {h}:00
@@ -214,14 +212,15 @@ export const ScheduleGrid: React.FC<ScheduleGridProps> = ({
                   ))}
                 </div>
 
-                {/* Day columns */}
+                {/* Columnas de Días */}
                 {DAYS.map((day) => (
-                  <div key={day} className={`relative ${styles.dayCol}`}>
+                  <div key={day} className="relative">
+                    {/* Líneas horizontales por hora */}
                     {hours.map((h) => (
                       <div key={`${day}-${h}`} className={`h-[82px] border-b ${styles.gridLine}`} />
                     ))}
 
-                    {/* Classes */}
+                    {/* Sesiones de Clase */}
                     {regularClasses
                       .filter((s) => s.day === day)
                       .map((session) => {
@@ -231,7 +230,7 @@ export const ScheduleGrid: React.FC<ScheduleGridProps> = ({
                         return (
                           <div
                             key={session.id}
-                            className="absolute w-[94%] left-[3%] z-10"
+                            className="absolute w-[92%] left-[4%] z-10"
                             style={{ ...pos }}
                           >
                             {session.conflict && (
@@ -244,9 +243,7 @@ export const ScheduleGrid: React.FC<ScheduleGridProps> = ({
                               className={`h-full ${session.conflict ? '!border-l-error !bg-error-container/85 !ring-2 !ring-error/20' : eventStyles.className}`}
                               style={{ ...eventStyles.style, fontSize: `${detailsFontSize}px` }}
                               onClick={() => {
-                                if (session.conflict) {
-                                  onResolveConflict(session);
-                                }
+                                if (session.conflict) onResolveConflict(session);
                                 setSelected(session);
                               }}
                             />
@@ -261,8 +258,9 @@ export const ScheduleGrid: React.FC<ScheduleGridProps> = ({
         </div>
       </div>
 
+      {/* Materias Virtuales */}
       {virtualClasses.length > 0 && (
-        <div className="bg-surface-container-low border border-outline-variant/30 rounded-[2rem] p-6 shadow-editorial">
+        <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 shadow-editorial">
           <h3 className="text-lg font-bold text-on-surface mb-4 flex items-center gap-2">
             Materias Virtuales / Sin Horario Fijo
           </h3>
@@ -270,7 +268,7 @@ export const ScheduleGrid: React.FC<ScheduleGridProps> = ({
             {virtualClasses.map((session) => (
               <div
                 key={session.id}
-                className="bg-surface-container-lowest p-4 rounded-2xl shadow-sm border border-outline-variant/20 border-l-4 hover:shadow-editorial transition-all"
+                className="bg-surface-container-lowest p-4 rounded-xl shadow-sm border border-outline-variant/20 border-l-4 hover:shadow-editorial transition-all cursor-pointer"
                 style={{ borderLeftColor: session.color || FALLBACK_COLOR }}
                 onClick={() => setSelected(session)}
                 role="button"
@@ -281,7 +279,7 @@ export const ScheduleGrid: React.FC<ScheduleGridProps> = ({
                 <p className="text-xs text-on-surface-variant mt-1.5 break-words whitespace-normal leading-tight font-medium">
                   Docente: {session.teacher || 'N/A'}
                 </p>
-                <div className="mt-2 inline-block px-2.5 py-0.5 bg-primary-fixed/20 text-on-primary-fixed-variant text-[10px] rounded-full font-bold">
+                <div className="mt-2 inline-block px-2.5 py-0.5 bg-primary/8 text-primary text-[10px] rounded-full font-bold">
                   VIRTUAL
                 </div>
               </div>
@@ -290,7 +288,7 @@ export const ScheduleGrid: React.FC<ScheduleGridProps> = ({
         </div>
       )}
 
-      {/* Details Dialog */}
+      {/* Modal de Detalles */}
       <Modal isOpen={!!selected} onClose={() => setSelected(null)}>
         {selected && (
           <div className="text-left">

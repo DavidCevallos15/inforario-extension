@@ -2,7 +2,7 @@ import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// Configuración de Vite para Inforario
+// Configuración de Vite para Inforario (extensión Chrome MV3)
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
@@ -21,9 +21,15 @@ export default defineConfig(({ mode }) => {
           '@': path.resolve(__dirname, '.'),
         }
       },
+      // Consolidar todo el CSS en un solo archivo para la extensión
+      css: {
+        devSourcemap: true,
+      },
       build: {
         outDir: 'dist',
         emptyOutDir: true,
+        // Un solo archivo CSS sin code-splitting
+        cssCodeSplit: false,
         rollupOptions: {
           input: {
             main: path.resolve(__dirname, 'index.html'),
@@ -37,8 +43,16 @@ export default defineConfig(({ mode }) => {
               }
               return 'assets/[name]-[hash].js';
             },
+            // Nombre predecible para el CSS compilado
+            assetFileNames: (assetInfo) => {
+              if (assetInfo.names?.some(name => name.endsWith('.css'))) {
+                return 'assets/main.css';
+              }
+              return 'assets/[name]-[hash][extname]';
+            },
           },
         },
       }
     };
 });
+

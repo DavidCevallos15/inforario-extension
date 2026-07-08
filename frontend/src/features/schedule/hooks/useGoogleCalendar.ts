@@ -153,7 +153,23 @@ export const useGoogleCalendar = () => {
 
     } catch (err: any) {
       console.error('Error durante la sincronización con Google Calendar:', err);
-      const errorMessage = err.message || 'Error desconocido al sincronizar.';
+
+      const rawMessage: string = err?.message ?? '';
+      const isRestrictedOrgError =
+        /restricted.*(users|organization)|organization.*restricted|institucional/i.test(rawMessage);
+
+      if (isRestrictedOrgError) {
+        const friendlyMessage =
+          '⚠️ Acceso institucional requerido: Por favor, asegúrate de estar logueado en Chrome ' +
+          'con tu cuenta académica @utm.edu.ec y no con una cuenta personal.';
+
+        // Alerta visible inmediata para que el usuario note el problema
+        alert(friendlyMessage);
+        setError(friendlyMessage);
+        throw new Error(friendlyMessage);
+      }
+
+      const errorMessage = rawMessage || 'Error desconocido al sincronizar.';
       setError(errorMessage);
       throw new Error(errorMessage);
     } finally {
